@@ -17,14 +17,16 @@ export default function Home() {
   const startVoice = async () => {
     try {
       setStatus("connecting...");
-      addLog("🔑 セッション取得中...");
+      addLog("🔑 Azure セッション取得中...");
 
+      // 自前バックエンドからエフェメラルキーを取得
       const tokenRes = await fetch(
         "https://gpt-api-backend-eneaaeh0h0cxgxf6.japanwest-01.azurewebsites.net/realtime/session",
         { method: "POST" }
       );
 
       const tokenData = await tokenRes.json();
+      // Azureのレスポンス構造 client_secret.value を取得
       const EPHEMERAL_KEY = tokenData.client_secret.value;
 
       addLog("✅ セッション取得OK");
@@ -48,7 +50,6 @@ export default function Home() {
       };
 
       const dc = pc.createDataChannel("oai-events");
-
       dc.onmessage = (e) => {
         addLog("🤖 " + e.data);
       };
@@ -56,17 +57,18 @@ export default function Home() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const response = await fetch(
-        "https://api.openai.com/v1/realtime",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${EPHEMERAL_KEY}`,
-            "Content-Type": "application/sdp",
-          },
-          body: offer.sdp,
-        }
-      );
+      // Azure OpenAI の Realtime WebRTC エンドポイントへ接続
+      // 注意: URLは環境に合わせて書き換えてください
+      const AZURE_REALTIME_URL = `https://gpt-api-realtime.openai.azure.com/openai/deployments/gpt-realtime-1.5/realtime?api-version=2024-10-01-preview`;
+
+      const response = await fetch(AZURE_REALTIME_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${EPHEMERAL_KEY}`,
+          "Content-Type": "application/sdp",
+        },
+        body: offer.sdp,
+      });
 
       const answerSDP = await response.text();
 
@@ -76,7 +78,7 @@ export default function Home() {
       });
 
       setStatus("connected");
-      addLog("🎤 接続完了");
+      addLog("🎤 接続完了 (Azure)");
     } catch (err) {
       console.error(err);
       setStatus("error");
@@ -86,17 +88,13 @@ export default function Home() {
 
   const stopVoice = () => {
     addLog("🛑 停止処理");
-
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-
     pcRef.current?.close();
     pcRef.current = null;
-
     setStatus("stopped");
   };
 
-  // 🔥 トグル処理
   const handleToggle = async () => {
     if (isRunning) {
       stopVoice();
@@ -110,39 +108,28 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white flex items-center justify-center">
       <div className="w-full max-w-xl p-6 bg-white/5 backdrop-blur rounded-2xl shadow-xl border border-white/10">
-
         <h1 className="text-3xl font-bold mb-4 text-center">
-          🎤 Realtime Voice AI
+          🎤 Azure Realtime Voice AI
         </h1>
-
-        {/* ステータス */}
         <div className="mb-4 text-center">
           <span className="px-3 py-1 rounded-full text-sm bg-blue-500/20">
             Status: {status}
           </span>
         </div>
-
-        {/* 🔥 トグルボタン */}
         <div className="flex justify-center mb-6">
           <button
             onClick={handleToggle}
             className={`px-6 py-3 rounded-xl font-semibold shadow-lg transition
-              ${isRunning
-                ? "bg-red-500 hover:bg-red-600"
-                : "bg-blue-500 hover:bg-blue-600"
-              }`}
+              ${isRunning ? "bg-red-500 hover:bg-red-600" : "bg-blue-500 hover:bg-blue-600"}`}
           >
             {isRunning ? "⏹ 停止" : "🎙 音声開始"}
           </button>
         </div>
-
-        {/* ログ */}
         <div className="h-64 overflow-y-auto bg-black/40 p-4 rounded-xl border border-white/10 text-sm space-y-2">
           {logs.map((log, i) => (
             <div key={i}>{log}</div>
           ))}
         </div>
-
       </div>
     </div>
   );
