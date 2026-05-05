@@ -1,136 +1,52 @@
-"use client";
+// startVoice関数内のfetch部分のみ抜粋
+const startVoice = async () => {
+  try {
+    setStatus("connecting...");
+    addLog("🔑 Azureセッション取得リクエスト送信中...");
 
-import { useState, useRef } from "react";
+    // 自前バックエンドのURL
+    const tokenRes = await fetch(
+      "https://gpt-api-backend-eneaaeh0h0cxgxf6.japanwest-01.azurewebsites.net/realtime/session",
+      { method: "POST" }
+    );
 
-export default function Home() {
-  const [isRunning, setIsRunning] = useState(false);
-  const [status, setStatus] = useState("idle");
-  const [logs, setLogs] = useState<string[]>([]);
-
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
-  const addLog = (msg: string) => {
-    setLogs((prev) => [...prev, msg]);
-  };
-
-  const startVoice = async () => {
-    try {
-      setStatus("connecting...");
-      addLog("🔑 Azure セッション取得中...");
-
-      // 自前バックエンドからエフェメラルキーを取得
-      const tokenRes = await fetch(
-        "https://gpt-api-backend-eneaaeh0h0cxgxf6.japanwest-01.azurewebsites.net/realtime/session",
-        { method: "POST" }
-      );
-
-      const tokenData = await tokenRes.json();
-      // Azureのレスポンス構造 client_secret.value を取得
-      const EPHEMERAL_KEY = tokenData.client_secret.value;
-
-      addLog("✅ セッション取得OK");
-
-      const pc = new RTCPeerConnection();
-      pcRef.current = pc;
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
-      streamRef.current = stream;
-
-      stream.getTracks().forEach((track) => {
-        pc.addTrack(track, stream);
-      });
-
-      pc.ontrack = (event) => {
-        const audio = document.createElement("audio");
-        audio.srcObject = event.streams[0];
-        audio.autoplay = true;
-      };
-
-      const dc = pc.createDataChannel("oai-events");
-      dc.onmessage = (e) => {
-        addLog("🤖 " + e.data);
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      // Azure OpenAI の Realtime WebRTC エンドポイントへ接続
-      // 注意: URLは環境に合わせて書き換えてください
-      const AZURE_REALTIME_URL = `https://gpt-api-realtime.openai.azure.com/openai/deployments/gpt-realtime-1.5/realtime?api-version=2024-10-01-preview`;
-
-      const response = await fetch(AZURE_REALTIME_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${EPHEMERAL_KEY}`,
-          "Content-Type": "application/sdp",
-        },
-        body: offer.sdp,
-      });
-
-      const answerSDP = await response.text();
-
-      await pc.setRemoteDescription({
-        type: "answer",
-        sdp: answerSDP,
-      });
-
-      setStatus("connected");
-      addLog("🎤 接続完了 (Azure)");
-    } catch (err) {
-      console.error(err);
-      setStatus("error");
-      addLog("❌ エラー発生");
+    const tokenData = await tokenRes.json();
+    
+    // エラーハンドリング追加
+    if (!tokenData.client_secret || !tokenData.client_secret.value) {
+      console.error("Invalid token data:", tokenData);
+      throw new Error("エフェメラルキーの取得に失敗しました。バックエンドのログを確認してください。");
     }
-  };
 
-  const stopVoice = () => {
-    addLog("🛑 停止処理");
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    pcRef.current?.close();
-    pcRef.current = null;
-    setStatus("stopped");
-  };
+    const EPHEMERAL_KEY = tokenData.client_secret.value;
+    addLog("✅ エフェメラルキー取得成功");
 
-  const handleToggle = async () => {
-    if (isRunning) {
-      stopVoice();
-      setIsRunning(false);
-    } else {
-      await startVoice();
-      setIsRunning(true);
-    }
-  };
+    // --- WebRTCの設定 (既存コードと同じ) ---
+    const pc = new RTCPeerConnection();
+    // ...中略...
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white flex items-center justify-center">
-      <div className="w-full max-w-xl p-6 bg-white/5 backdrop-blur rounded-2xl shadow-xl border border-white/10">
-        <h1 className="text-3xl font-bold mb-4 text-center">
-          🎤 Azure Realtime Voice AI
-        </h1>
-        <div className="mb-4 text-center">
-          <span className="px-3 py-1 rounded-full text-sm bg-blue-500/20">
-            Status: {status}
-          </span>
-        </div>
-        <div className="flex justify-center mb-6">
-          <button
-            onClick={handleToggle}
-            className={`px-6 py-3 rounded-xl font-semibold shadow-lg transition
-              ${isRunning ? "bg-red-500 hover:bg-red-600" : "bg-blue-500 hover:bg-blue-600"}`}
-          >
-            {isRunning ? "⏹ 停止" : "🎙 音声開始"}
-          </button>
-        </div>
-        <div className="h-64 overflow-y-auto bg-black/40 p-4 rounded-xl border border-white/10 text-sm space-y-2">
-          {logs.map((log, i) => (
-            <div key={i}>{log}</div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // AzureのWebRTCエンドポイントURL (sessions ではなく realtime)
+    const AZURE_REALTIME_URL = `https://gpt-api-realtime.openai.azure.com/openai/deployments/gpt-realtime-1.5/realtime?api-version=2024-10-01-preview`;
+
+    const response = await fetch(AZURE_REALTIME_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${EPHEMERAL_KEY}`, // 取得したキーを使用
+        "Content-Type": "application/sdp",
+      },
+      body: offer.sdp,
+    });
+
+    const answerSDP = await response.text();
+    await pc.setRemoteDescription({ type: "answer", sdp: answerSDP });
+
+    setStatus("connected");
+    addLog("🎤 接続完了。お話しください。");
+  } catch (err) {
+    addLog(`❌ エラー: ${err.message}`);
+    setStatus("error");
+  }
+};
