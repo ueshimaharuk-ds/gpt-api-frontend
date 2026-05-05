@@ -20,7 +20,7 @@ export default function Home() {
       addLog("🔑 セッション取得中...");
 
       const tokenRes = await fetch(
-        "https://realtime-api-backend-g6f4ddfzh3dsc9fa.japanwest-01.azurewebsites.net/realtime/session",
+        "https://gpt-api-backend-eneaaeh0h0cxgxf6.japanwest-01.azurewebsites.net/realtime/session",
         { method: "POST" }
       );
 
